@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Minecraft 2D & Verity</title>
+  <style>
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: sans-serif; }
+    canvas { display: block; width: 100%; height: 100%; }
+    
+    #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+    #health-bar { position: absolute; top: 15px; left: 15px; background: rgba(0,0,0,0.5); padding: 5px 15px; border-radius: 10px; color: white; font-size: 20px; font-weight: bold; pointer-events: auto; }
+    #info-panel { position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.7); color: white; padding: 15px; border-radius: 8px; font-size: 14px; line-height: 1.5; pointer-events: auto; }
+    #info-title { font-weight: bold; color: #FFCC00; margin-bottom: 5px; }
+    
+    #hotbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; background: rgba(0,0,0,0.5); padding: 8px; border-radius: 8px; pointer-events: auto; }
+    .hotbar-slot { width: 40px; height: 40px; border: 2px solid rgba(255,255,255,0.4); border-radius: 6px; cursor: pointer; position: relative; display: flex; align-items: center; justify-content: center; user-select: none; }
+    .hotbar-slot:hover { border-color: rgba(255,255,255,0.8); }
+    .hotbar-slot.selected { border-color: white; transform: scale(1.1); z-index: 10; box-shadow: 0 0 10px white; }
+    .hotbar-slot .count { position: absolute; top: -8px; right: -8px; background: #3b82f6; color: white; font-size: 10px; font-weight: bold; padding: 2px 6px; border-radius: 10px; border: 1px solid black; }
+    .hotbar-slot .count.zero { background: #ef4444; }
+    .hotbar-slot .key-hint { position: absolute; bottom: 2px; left: 4px; font-size: 10px; color: rgba(255,255,255,0.8); text-shadow: 1px 1px 0 #000; font-family: monospace; font-weight: bold; }
+    
+    #chat-container { position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%); display: none; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; pointer-events: auto; width: 400px; border: 1px solid #FFCC00; }
+    #chat-input { width: 100%; padding: 8px; font-size: 16px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; outline: none; box-sizing: border-box; }
+    #chat-input:focus { border-color: #FFCC00; }
+    #chat-log { margin-bottom: 10px; color: white; font-size: 14px; max-height: 100px; overflow-y: auto; }
+    .chat-verity { color: #FFCC00; font-weight: bold; }
+    .chat-user { color: #4ade80; }
+    
+    #death-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,0,0,0.6); display: none; align-items: center; justify-content: center; color: white; font-size: 60px; font-weight: bold; text-shadow: 2px 2px 0 #000; z-index: 100; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  
+  <div id="ui-layer">
+    <div id="health-bar">❤️❤️❤️❤️❤️❤️❤️❤️❤️❤️</div>
+    
+    <div id="info-panel">
+      <div id="info-title">MİNECRAFT 2D</div>
+      <div>[W,A,S,D] : Hareket</div>
+      <div>[T] : Verity ile Chat</div>
+      <div>[Sol Tık] : Blok Kır / Saldır</div>
+      <div>[Sağ Tık] : Blok Koy</div>
+      <div>[1-9] : Envanterden Seç</div>
+    </div>
+    
+    <div id="hotbar"></div>
+    
+    <div id="chat-container">
+      <div id="chat-log">
+        <div><span class="chat-verity">Verity:</span> Merhaba Apo! Sana nasıl yardım edebilirim? Beni taşımamı ya da entity olmamı istersen söylemen yeterli.</div>
+      </div>
+      <input type="text" id="chat-input" placeholder="Verity'e bir şey söyle... (Göndermek için Enter)" autocomplete="off">
+    </div>
+    
+    <div id="death-screen">ÖLDÜN!</div>
+  </div>
+
+<script>
+// === SABİTLER ===
+const BLOCK_SIZE = 32;
+const WORLD_W = 128;
+const WORLD_H = 64;
+const PLAYER_W = 24;
+const PLAYER_H = 48;
+
+const BLOCKS = { AIR: 0, DIRT: 1, GRASS: 2, STONE: 3, WOOD: 4, LEAVES: 5, PLANKS: 6, BRICK: 7, GLASS: 8, VERITY_EGG: 99, SWORD: 100 };
+const COLORS = {
+  [BLOCKS.AIR]: 'transparent', [BLOCKS.DIRT]: '#8B4513', [BLOCKS.GRASS]: '#556B2F',
+  [BLOCKS.STONE]: '#808080', [BLOCKS.WOOD]: '#654321', [BLOCKS.LEAVES]: '#228B22',
+  [BLOCKS.PLANKS]: '#DEB887', [BLOCKS.BRICK]: '#B22222', [BLOCKS.GLASS]: 'rgba(173, 216, 230, 0.4)',
+  [BLOCKS.VERITY_EGG]: '#222', [BLOCKS.SWORD]: '#222'
+};
+const NAMES = {
+  [BLOCKS.DIRT]: 'Toprak', [BLOCKS.GRASS]: 'Çim', [BLOCKS.STONE]: 'Taş',
+  [BLOCKS.WOOD]: 'Odun', [BLOCKS.LEAVES]: 'Yaprak', [BLOCKS.PLANKS]: 'Tahta',
+  [BLOCKS.BRICK]: 'Tuğla', [BLOCKS.GLASS]: 'Cam', [BLOCKS.VERITY_EGG]: 'Verity (Asistan)',
+  [BLOCKS.SWORD]: 'Elmas Kılıç'
+};
+const HOTBAR_ITEMS = [ BLOCKS.DIRT, BLOCKS.GRASS, BLOCKS.STONE, BLOCKS.WOOD, BLOCKS.LEAVES, BLOCKS.PLANKS, BLOCKS.BRICK, BLOCKS.VERITY_EGG, BLOCKS.SWORD ];
+
+// === OYUN DURUMU ===
+let world = new Uint8Array(WORLD_W * WORLD_H);
+let inventory = { [BLOCKS.DIRT]: 10, [BLOCKS.GRASS]: 5, [BLOCKS.STONE]: 5, [BLOCKS.VERITY_EGG]: 1, [BLOCKS.SWORD]: 1 };
+let selectedBlock = BLOCKS.DIRT;
+
+let player = { x: (WORLD_W*BLOCK_SIZE)/2, y: 10*BLOCK_SIZE, vx: 0, vy: 0, grounded: false, hp: 20, invulnTimer: 0 };
+let camera = { x: 0, y: 0 };
+let verity = { x: 0, y: 0, active: false, timer: 0, alpha: 0, flicker: 1, form: 'smiley', carrying: false, reply: "Yanındayım Apo!" };
+let enemies = [];
+
+let keys = { left: false, right: false, up: false, down: false };
+let mouse = { x: 0, y: 0, interactX: -1, interactY: -1, btn: -1 };
+let isChatOpen = false;
+
+// === DÜNYA OLUŞTURMA (Perlin Noise Basit) ===
+function noise(x) { return Math.sin(x * 0.1) * Math.sin(x * 0.05) * 5; }
+
+for (let x = 0; x < WORLD_W; x++) {
+  const h = Math.floor(WORLD_H / 2 + noise(x));
+  for (let y = 0; y < WORLD_H; y++) {
+    const idx = y * WORLD_W + x;
+    if (y > h + 5) world[idx] = BLOCKS.STONE;
+    else if (y > h) world[idx] = BLOCKS.DIRT;
+    else if (y === h) world[idx] = BLOCKS.GRASS;
+    else world[idx] = BLOCKS.AIR;
+  }
+}
+
+// === ZOMBİ SPAWNER ===
+setInterval(() => {
+  if (enemies.length < 5) {
+    const spawnX = Math.random() < 0.5 ? player.x - 400 - Math.random() * 200 : player.x + 400 + Math.random() * 200;
+    if (spawnX > 0 && spawnX < WORLD_W * BLOCK_SIZE) {
+      enemies.push({ x: spawnX, y: 0, vx: 0, vy: 0, hp: 10, grounded: false, active: true });
+    }
+  }
+}, 5000);
+
+// === DOM ELEMANLARI & ARAYÜZ ===
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const hotbarEl = document.getElementById('hotbar');
+const healthBarEl = document.getElementById('health-bar');
+const chatContainer = document.getElementById('chat-container');
+const chatInput = document.getElementById('chat-input');
+const chatLog = document.getElementById('chat-log');
+const deathScreen = document.getElementById('death-screen');
+
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize); resize();
+
+function updateUI() {
+  // Can
+  let hStr = "";
+  for(let i=0; i<Math.ceil(player.hp/2); i++) hStr += "❤️";
+  healthBarEl.innerText = hStr;
+
+  if (player.hp <= 0) deathScreen.style.display = "flex";
+  else deathScreen.style.display = "none";
+
+  // Hotbar
+  hotbarEl.innerHTML = "";
+  HOTBAR_ITEMS.forEach((block, idx) => {
+    let count = inventory[block] || 0;
+    let div = document.createElement('div');
+    div.className = `hotbar-slot ${selectedBlock === block ? 'selected' : ''}`;
+    div.style.backgroundColor = COLORS[block];
+    div.title = `${NAMES[block]} (${count})`;
+    div.onclick = () => { selectedBlock = block; updateUI(); };
+    
+    if(block === BLOCKS.VERITY_EGG) div.innerHTML = "<div style='font-size: 20px;'>🙂</div>";
+    else if(block === BLOCKS.SWORD) div.innerHTML = "<div style='font-size: 20px; text-shadow:0 0 5px cyan;'>🗡️</div>";
+    
+    if (block !== BLOCKS.SWORD) {
+      div.innerHTML += `<div class="count ${count===0?'zero':''}">${count}</div>`;
+    }
+    div.innerHTML += `<div class="key-hint">${idx+1}</div>`;
+    hotbarEl.appendChild(div);
+  });
+}
+updateUI();
+
+// === GİRDİ KONTROLLERİ ===
+window.addEventListener('keydown', (e) => {
+  if (isChatOpen) {
+    if (e.key === 'Escape') { isChatOpen = false; chatContainer.style.display = 'none'; }
+    if (e.key === 'Enter' && chatInput.value.trim() !== '') {
+      handleChat(chatInput.value.trim());
+      chatInput.value = '';
+      isChatOpen = false; chatContainer.style.display = 'none';
+    }
+    return;
+  }
+  const k = e.key.toLowerCase();
+  if (k === 'a' || k === 'arrowleft') keys.left = true;
+  if (k === 'd' || k === 'arrowright') keys.right = true;
+  if (k === 'w' || k === 'arrowup' || k === ' ') keys.up = true;
+  if (k === 's' || k === 'arrowdown') keys.down = true;
+  if (k === 't') { e.preventDefault(); isChatOpen = true; chatContainer.style.display = 'block'; chatInput.focus(); }
+  if (k >= '1' && k <= '9') { const idx = parseInt(k)-1; if(HOTBAR_ITEMS[idx]) { selectedBlock = HOTBAR_ITEMS[idx]; updateUI(); } }
+});
+window.addEventListener('keyup', (e) => {
+  const k = e.key.toLowerCase();
+  if (k === 'a' || k === 'arrowleft') keys.left = false;
+  if (k === 'd' || k === 'arrowright') keys.right = false;
+  if (k === 'w' || k === 'arrowup' || k === ' ') keys.up = false;
+  if (k === 's' || k === 'arrowdown') keys.down = false;
+});
+
+window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('mousedown', e => {
+  if(isChatOpen || e.clientY < 60 || e.clientY > window.innerHeight - 80) return;
+  mouse.interactX = mouse.x; mouse.interactY = mouse.y; mouse.btn = e.button;
+});
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+// === YEREL YAPAY ZEKA MANTIĞI ===
+function handleChat(msg) {
+  chatLog.innerHTML += `<div><span class="chat-user">Apo:</span> ${msg}</div>`;
+  const lower = msg.toLowerCase();
+  let reply = "Anladım apo!";
+  
+  if(lower.includes('taşı') || lower.includes('uçur')) { reply = "Seni taşıyorum apo!"; verity.carrying = true; }
+  else if(lower.includes('bırak') || lower.includes('indir')) { reply = "Seni indiriyorum apo!"; verity.carrying = false; }
+  else if(lower.includes('entity') || lower.includes('canavar')) { reply = "Entity şekline dönüşüyorum apo!"; verity.form = 'entity'; }
+  else if(lower.includes('eski') || lower.includes('normal') || lower.includes('smiley')) { reply = "Eski halime dönüşüyorum apo!"; verity.form = 'smiley'; }
+  else if(lower.includes('koru') || lower.includes('saldır')) { reply = "Seni koruyorum apo, düşmanlara saldıracağım!"; }
+  else if(lower.includes('oyuncu') || lower.includes('benim şekl')) { reply = "Oyuncu şekline dönüşüyorum apo!"; verity.form = 'player'; }
+
+  verity.reply = reply;
+  chatLog.innerHTML += `<div><span class="chat-verity">Verity:</span> ${reply}</div>`;
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+// === FİZİK & ÇARPIŞMA ===
+function collides(px, py, pw, ph) {
+  const minX = Math.floor(px / BLOCK_SIZE);
+  const maxX = Math.floor((px + pw - 0.1) / BLOCK_SIZE);
+  const minY = Math.floor(py / BLOCK_SIZE);
+  const maxY = Math.floor((py + ph - 0.1) / BLOCK_SIZE);
+
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      if (x >= 0 && x < WORLD_W && y >= 0 && y < WORLD_H) {
+        if (world[y * WORLD_W + x] !== BLOCKS.AIR && world[y * WORLD_W + x] !== BLOCKS.GLASS) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// === OYUN DÖNGÜSÜ ===
+let lastTime = performance.now();
+function loop(time) {
+  const dt = Math.min(time - lastTime, 32);
+  lastTime = time;
+
+  // Fizikler
+  if (!isChatOpen && player.hp > 0) {
+    if (keys.left) player.vx -= 1.5;
+    if (keys.right) player.vx += 1.5;
+  }
+  player.invulnTimer = Math.max(0, player.invulnTimer - dt);
+
+  // Verity Taşıma Fiziği
+  if (verity.active && verity.carrying) {
+    player.vy *= 0.8;
+    if (!isChatOpen) {
+       if (keys.up) player.vy -= 1.5;
+       if (keys.down) player.vy += 1.5;
+    }
+  } else {
+    player.vy += 0.5; // Gravity
+    player.vy *= 0.98;
+  }
+
+  player.vx *= 0.8;
+  if(player.vx > 7) player.vx = 7; if(player.vx < -7) player.vx = -7;
+  if(player.vy > 10) player.vy = 10; if(player.vy < -10) player.vy = -10;
+
+  // X Çarpışma
+  player.x += player.vx;
+  if (collides(player.x, player.y, PLAYER_W, PLAYER_H)) {
+    player.x -= player.vx; player.vx = 0;
+  }
+  // Y Çarpışma
+  player.y += player.vy;
+  player.grounded = false;
+  if (collides(player.x, player.y, PLAYER_W, PLAYER_H)) {
+    player.y -= player.vy;
+    if (player.vy > 0) player.grounded = true;
+    player.vy = 0;
+  }
+
+  if (!isChatOpen && keys.up && player.grounded && (!verity.active || !verity.carrying)) {
+    player.vy = -8.5; player.grounded = false;
+  }
+
+  if (player.y > WORLD_H * BLOCK_SIZE + 200) { player.hp -= 2; updateUI(); } // Void damage
+
+  // Zombiler
+  enemies.forEach(e => {
+    if (!e.active) return;
+    const dist = player.x - e.x;
+    if (Math.abs(dist) < 400 && Math.abs(player.y - e.y) < 150) {
+      if (dist > 0) e.vx += 0.2; else e.vx -= 0.2;
+    }
+    e.vy += 0.5; e.vy *= 0.98; e.vx *= 0.85;
+    if(e.vx > 2) e.vx = 2; if(e.vx < -2) e.vx = -2;
+
+    e.x += e.vx;
+    if (collides(e.x, e.y, PLAYER_W, PLAYER_H)) {
+      e.x -= e.vx; e.vx = 0;
+      if (e.grounded) { e.vy = -7; e.grounded = false; }
+    }
+    e.y += e.vy;
+    e.grounded = false;
+    if (collides(e.x, e.y, PLAYER_W, PLAYER_H)) {
+      e.y -= e.vy;
+      if (e.vy > 0) e.grounded = true;
+      e.vy = 0;
+    }
+    if (player.invulnTimer <= 0 && player.hp > 0 && Math.abs(player.x - e.x) < PLAYER_W && Math.abs(player.y - e.y) < PLAYER_H) {
+      player.hp -= 2; player.invulnTimer = 1000;
+      player.vx = e.x > player.x ? -5 : 5; player.vy = -5;
+      updateUI();
+    }
+    if (e.y > WORLD_H * BLOCK_SIZE) e.active = false;
+  });
+  enemies = enemies.filter(e => e.active);
+
+  // Zombi Ölüm & Verity AI
+  verity.timer += dt;
+  if (verity.active) {
+    if (verity.alpha < 1) verity.alpha += 0.05;
+    if (verity.carrying) {
+      verity.x = player.x; verity.y = player.y + 20 + Math.sin(verity.timer/300)*5;
+      verity.flicker = player.vx < 0 ? -1 : 1;
+    } else {
+      let targetEnemy = null;
+      if (verity.reply.includes("koruyorum") || verity.reply.includes("saldır")) {
+        let minD = 500;
+        enemies.forEach(e => {
+          let d = Math.hypot(e.x - verity.x, e.y - verity.y);
+          if(d < minD) { minD = d; targetEnemy = e; }
+        });
+      }
+      if (targetEnemy) {
+        verity.x += (targetEnemy.x - verity.x) * 0.1;
+        verity.y += (targetEnemy.y - 20 - verity.y) * 0.1;
+        verity.flicker = targetEnemy.x < verity.x ? -1 : 1;
+        if (Math.hypot(targetEnemy.x - verity.x, targetEnemy.y - verity.y) < 40) {
+          targetEnemy.hp -= 1;
+          if (targetEnemy.hp <= 0) targetEnemy.active = false;
+          targetEnemy.vx = verity.flicker * 5;
+        }
+      } else {
+        verity.x += (player.x + (player.vx >= 0 ? -60 : 60) - verity.x) * 0.05;
+        verity.y += (player.y - 50 + Math.sin(verity.timer/500)*10 - verity.y) * 0.05;
+        verity.flicker = player.x < verity.x ? -1 : 1;
+      }
+    }
+  }
+
+  // Tıklama İşlemleri (Blok Koy / Kır / Saldır)
+  if (mouse.btn !== -1 && player.hp > 0) {
+    const clickX = mouse.interactX + camera.x;
+    const clickY = mouse.interactY + camera.y;
+    const bx = Math.floor(clickX / BLOCK_SIZE);
+    const by = Math.floor(clickY / BLOCK_SIZE);
+    const dist = Math.hypot((bx+0.5)*BLOCK_SIZE - (player.x+PLAYER_W/2), (by+0.5)*BLOCK_SIZE - (player.y+PLAYER_H/2));
+
+    if (dist < 250) {
+      let hitZombie = false;
+      if (mouse.btn === 0 || (mouse.btn === 2 && selectedBlock === BLOCKS.SWORD)) {
+        for (let i = 0; i < enemies.length; i++) {
+          let e = enemies[i];
+          if (clickX >= e.x && clickX <= e.x+PLAYER_W && clickY >= e.y && clickY <= e.y+PLAYER_H) {
+            e.hp -= (selectedBlock === BLOCKS.SWORD ? 10 : 2);
+            if(e.hp <= 0) e.active = false;
+            e.vx = e.x > player.x ? 8 : -8; e.vy = -5;
+            hitZombie = true; break;
+          }
+        }
+      }
+      if (!hitZombie && selectedBlock !== BLOCKS.SWORD) {
+        if (mouse.btn === 0) { // Kır
+          if (bx>=0 && bx<WORLD_W && by>=0 && by<WORLD_H) {
+            const b = world[by*WORLD_W+bx];
+            if (b !== BLOCKS.AIR) {
+              world[by*WORLD_W+bx] = BLOCKS.AIR;
+              inventory[b] = (inventory[b] || 0) + 1;
+              updateUI();
+            }
+          }
+        } else if (mouse.btn === 2) { // Koy
+          if (selectedBlock === BLOCKS.VERITY_EGG && inventory[BLOCKS.VERITY_EGG] > 0) {
+            verity.active = true; verity.x = bx*BLOCK_SIZE; verity.y = by*BLOCK_SIZE; verity.alpha = 1;
+            inventory[BLOCKS.VERITY_EGG]--; updateUI();
+          } else if (inventory[selectedBlock] > 0 && bx>=0 && bx<WORLD_W && by>=0 && by<WORLD_H) {
+            if (world[by*WORLD_W+bx] === BLOCKS.AIR) {
+              world[by*WORLD_W+bx] = selectedBlock;
+              if (collides(player.x, player.y, PLAYER_W, PLAYER_H)) world[by*WORLD_W+bx] = BLOCKS.AIR;
+              else { inventory[selectedBlock]--; updateUI(); }
+            }
+          }
+        }
+      }
+    }
+    mouse.btn = -1;
+  }
+
+  // Kamera
+  camera.x += (player.x - canvas.width / 2 - camera.x) * 0.1;
+  camera.y += (player.y - canvas.height / 2 - camera.y) * 0.1;
+  camera.x = Math.max(0, Math.min(camera.x, WORLD_W * BLOCK_SIZE - canvas.width));
+  camera.y = Math.max(-500, Math.min(camera.y, WORLD_H * BLOCK_SIZE - canvas.height));
+
+  // ÇİZİM KISMI
+  ctx.fillStyle = '#87CEEB'; ctx.fillRect(0, 0, canvas.width, canvas.height); // Gökyüzü
+
+  const startX = Math.floor(camera.x / BLOCK_SIZE);
+  const endX = startX + Math.ceil(canvas.width / BLOCK_SIZE) + 1;
+  const startY = Math.floor(camera.y / BLOCK_SIZE);
+  const endY = startY + Math.ceil(canvas.height / BLOCK_SIZE) + 1;
+
+  for (let y = Math.max(0, startY); y < Math.min(WORLD_H, endY); y++) {
+    for (let x = Math.max(0, startX); x < Math.min(WORLD_W, endX); x++) {
+      const blk = world[y * WORLD_W + x];
+      if (blk !== BLOCKS.AIR) {
+        ctx.fillStyle = COLORS[blk];
+        ctx.fillRect(Math.floor(x*BLOCK_SIZE - camera.x), Math.floor(y*BLOCK_SIZE - camera.y), BLOCK_SIZE+1, BLOCK_SIZE+1);
+        if (blk === BLOCKS.GRASS) {
+          ctx.fillStyle = '#1A6B1A';
+          ctx.fillRect(Math.floor(x*BLOCK_SIZE - camera.x), Math.floor(y*BLOCK_SIZE - camera.y), BLOCK_SIZE+1, 6);
+        }
+      }
+    }
+  }
+
+  // Oyuncu
+  if (player.hp > 0 && (player.invulnTimer <= 0 || Math.floor(player.invulnTimer/100)%2===0)) {
+    const px = player.x - camera.x, py = player.y - camera.y;
+    if (player.invulnTimer > 800) {
+      ctx.fillStyle = '#FF0000'; ctx.fillRect(px, py, PLAYER_W, PLAYER_H);
+    } else {
+      ctx.fillStyle = '#00A8A8'; ctx.fillRect(px, py + 16, PLAYER_W, 18);
+      ctx.fillStyle = '#211c6a'; ctx.fillRect(px, py + 34, PLAYER_W, 14);
+      ctx.fillStyle = '#F0C8A0'; ctx.fillRect(px + 2, py, 20, 16);
+    }
+  } else if (player.hp <= 0) {
+    if (player.invulnTimer <= 0) { player.hp = 20; player.x = (WORLD_W*BLOCK_SIZE)/2; player.y = 0; player.invulnTimer = 2000; updateUI(); }
+  }
+
+  // Zombiler
+  enemies.forEach(e => {
+    const ex = e.x - camera.x, ey = e.y - camera.y;
+    ctx.fillStyle = '#1d5c2e'; ctx.fillRect(ex, ey, PLAYER_W, PLAYER_H);
+    ctx.fillStyle = '#2d1840'; ctx.fillRect(ex, ey + 16, PLAYER_W, 18);
+    ctx.fillStyle = '#2b2d5c'; ctx.fillRect(ex, ey + 34, PLAYER_W, 14);
+  });
+
+  // Verity
+  if (verity.active) {
+    const vx = verity.x - camera.x, vy = verity.y - camera.y;
+    ctx.globalAlpha = Math.max(0, verity.alpha);
+    if (verity.form === 'player') {
+      ctx.fillStyle = '#008888'; ctx.fillRect(vx, vy+16, PLAYER_W, 18);
+      ctx.fillStyle = '#1a1555'; ctx.fillRect(vx, vy+34, PLAYER_W, 14);
+      ctx.fillStyle = '#F0C8A0'; ctx.fillRect(vx+2, vy, 20, 16);
+      ctx.fillStyle = '#FFCC00'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('VERITY', vx+PLAYER_W/2, vy-5);
+    } else 
