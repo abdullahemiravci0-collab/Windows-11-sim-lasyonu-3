@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .mica-effect {
+    background: rgba(243, 243, 243, 0.82);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+  }
+
+  .mica-dark {
+    background: rgba(22, 27, 34, 0.85);
+    backdrop-filter: blur(24px) saturate(140%);
+    -webkit-backdrop-filter: blur(24px) saturate(140%);
+  }
+
+  .acrylic-popover {
+    background: rgba(30, 36, 48, 0.88);
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+}
+
+/* MEMZ Glitch animations */
+@keyframes memz-glitch {
+  0% { transform: translate(0); }
+  20% { transform: translate(-8px, 6px); filter: hue-rotate(90deg) contrast(150%); }
+  40% { transform: translate(-6px, -6px); filter: invert(0.85); }
+  60% { transform: translate(8px, 6px); filter: hue-rotate(240deg) saturate(200%); }
+  80% { transform: translate(6px, -6px); filter: contrast(200%); }
+  100% { transform: translate(0); }
+}
+
+.animate-memz-glitch {
+  animation: memz-glitch 0.18s infinite ease-in-out;
+}
+
+@keyframes crt-flicker {
+  0% { opacity: 0.97; }
+  50% { opacity: 1; }
+  100% { opacity: 0.98; }
+}
+
+.crt-scanlines {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.25) 50%
+  ), linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.03),
+    rgba(0, 255, 0, 0.01),
+    rgba(0, 0, 255, 0.03)
+  );
+  background-size: 100% 3px, 6px 100%;
+}
+
+/* Windows 11 Authentic Segoe Boot / Progress Ring Animation */
+@keyframes win11-dot-spin {
+  0% {
+    transform: rotate(0deg);
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  28% {
+    transform: rotate(180deg);
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  72% {
+    transform: rotate(540deg);
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  94% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(720deg);
+    opacity: 0;
+  }
+}
+
+.animate-win11-dot {
+  animation: win11-dot-spin 3s infinite cubic-bezier(0.25, 0.1, 0.25, 1);
+}

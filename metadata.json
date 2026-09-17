@@ -1,0 +1,6 @@
+{
+  "name": "Windows 11 Enterprise (apo)",
+  "description": "Windows 11 Enterprise web simulation for user apo with draggable desktop apps, Recycle Bin, Avcı AI assistant, Paint, Notepad, and MEMZ Trojan simulation with recovery.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
